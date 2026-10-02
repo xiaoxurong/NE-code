@@ -1,0 +1,30 @@
+# configs/rocket.yaml
+# python run.py --config configs/rocket.yaml
+#
+# ROCKET: all conv weights are FIXED (random). Only the linear head is trained.
+# Training is extremely fast — typically converges in < 10 epochs.
+# Use this as a diagnostic baseline:
+#   If ROCKET ≈ your deep models → your deep models aren't learning beyond random projections.
+#   If ROCKET >> your deep models → add more regularisation to the deep models.
+
+model:         "ROCKET"
+in_channels:   2
+num_kernels:   2000         # 1000 is sufficient for 290 samples; 10000 is overkill
+dropout:       0.0          # not applicable (no trainable conv weights)
+
+# class imbalance (39/290 ≈ 13.4% positive)
+use_focal:     true
+focal_alpha:   0.84         # ≈ 1 - (39/290)
+focal_gamma:   2.0
+
+data:      "CTG"
+root_path:     "./dataset/"
+data_path:     "CTGMultiWindow.npz"
+seq_len:       7200
+num_classes:   2
+n_folds:       5
+seed:          42
+train_epochs:  30           # converges very fast — no need for 100 epochs
+patience:      10
+batch_size:    64           # can afford larger batch since forward pass is cheap
+learning_rate: 1.0e-3      # ridge-like head benefits from higher LR

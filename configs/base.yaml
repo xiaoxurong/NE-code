@@ -1,0 +1,27 @@
+# configs/base.yaml
+# Shared hyperparameters across all models.
+# Model-specific configs inherit from this by listing the same keys and overriding
+# only what differs. Run with:  python run.py --config configs/<model>.yaml
+
+# ── data ──────────────────────────────────────────────────────────────────────
+root_path:   "./dataset/"
+data_path:   "CTG30minSegments.npz"
+data:        "CTG"
+seq_len:     7200          # 30 min at 4 Hz
+in_channels: 2             # FHR + TOCO
+num_classes: 2
+
+# ── cross-validation ──────────────────────────────────────────────────────────
+n_folds:     5             # StratifiedGroupKFold — never change this for fair comparison
+val_ratio:   0.15          # fraction of train subjects used for val within each fold
+seed:        42
+
+# ── training ──────────────────────────────────────────────────────────────────
+train_epochs:  100
+patience:      20          # early stopping
+batch_size:    32
+num_workers:   4
+learning_rate: 1.0e-4
+lradj:         "type1"
+dropout:       0.1
+checkpoints:   "./checkpoints/"

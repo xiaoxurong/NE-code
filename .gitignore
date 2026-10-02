@@ -1,0 +1,31 @@
+# Data and model weights never go in this repo
+dataset/
+data/
+*.npz
+*.npy
+*.csv
+*.xlsx
+*.xls
+*.mat
+*.pth
+*.pt
+*.ckpt
+checkpoints/
+results/
+
+# Experiment logs
+wandb/
+runs/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+env/
+
+# OS and editors
+.DS_Store
+.vscode/
+.idea/

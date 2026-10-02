@@ -1,0 +1,32 @@
+# configs/inception_time.yaml
+# python run.py --config configs/inception_time.yaml
+#
+# kernel_sizes guide (at 4 Hz, 4 points = 1 s):
+#   [41, 121, 241]  →  ~10 s / ~30 s / ~60 s   (default — covers STV, variable & late decels)
+#   [81, 161, 321]  →  ~20 s / ~40 s / ~80 s   (coarser; fewer params, less overfit risk)
+#   [41,  81, 161]  →  ~10 s / ~20 s / ~40 s   (finer; may miss late decelerations)
+
+model:         "InceptionTime"
+in_channels:   2
+d_model:       16           # reduced from 32 — fewer params for 290-sample dataset
+e_layers:      2            # num_groups (each group = 3 inception blocks)
+kernel_sizes:  [81, 161, 321]   # ~10 s / ~30 s / ~60 s at 4 Hz (specified in original time steps)
+stem_stride:   4                # downsample T 7200→1800 before inception blocks (~16× cheaper)
+dropout:       0.3          # now actually applied inside each InceptionBlock
+weight_decay:  1.0e-3       # L2 regularization on Adam
+
+# class imbalance
+use_focal:     true
+focal_alpha:   0.84         # 1 - (39/290) ≈ 0.85
+focal_gamma:   2.0
+
+root_path:     "./dataset/"
+data_path:     "CTGMultiWindow.npz"
+seq_len:       7200
+num_classes:   2
+n_folds:       5
+seed:          42
+train_epochs:  50
+patience:      15
+batch_size:    64
+learning_rate: 1.0e-4

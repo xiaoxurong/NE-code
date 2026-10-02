@@ -1,0 +1,18 @@
+# configs/cnn.yaml
+# python run.py --config configs/cnn.yaml
+
+model:         "CNN"
+in_channels:   2
+dropout:       0.3          # higher dropout for simple models on small datasets
+
+# ── inherited from base (repeated for clarity) ────────────────────────────────
+root_path:     "./dataset/"
+data_path:     "CTG30minSegments.npz"
+seq_len:       7200
+num_classes:   2
+n_folds:       5
+seed:          42
+train_epochs:  100
+patience:      20
+batch_size:    32
+learning_rate: 1.0e-4

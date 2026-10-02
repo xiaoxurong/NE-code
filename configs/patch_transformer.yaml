@@ -1,0 +1,33 @@
+# configs/patch_transformer.yaml
+# python run.py --config configs/patch_transformer.yaml
+#
+# patch_size guide (at 4 Hz):
+#   30  →  7.5 s per patch  → 240 patches  (fine-grained; more attention cost)
+#   60  → 15   s per patch  → 120 patches  (default; ~deceleration length)
+#   120 → 30   s per patch  →  60 patches  (coarse; faster, less overfit risk)
+#   240 → 60   s per patch  →  30 patches  (very coarse)
+
+model:         "PatchTransformer"
+in_channels:   2
+patch_size:    60           # 15 s at 4 Hz — covers a typical CTG deceleration
+d_model:       64           # transformer hidden dim
+num_heads:     4            # must divide d_model
+e_layers:      2            # transformer encoder layers
+dropout:       0.1
+
+# class imbalance
+use_focal:     true
+focal_alpha:   0.835
+focal_gamma:   2.0
+
+root_path:     "./dataset/"
+data_path:     "CTGMultiWindow.npz"
+seq_len:       7200
+num_classes:   2
+n_folds:       5
+seed:          42
+train_epochs:  100
+patience:      20
+batch_size:    64
+learning_rate: 1.0e-4
+weight_decay:  1.0e-3

@@ -1,0 +1,10 @@
+torch
+numpy
+pandas
+scikit-learn>=1.0
+pyyaml
+matplotlib
+# Only needed for dataPreprocessing.ipynb
+xlrd
+openpyxl
+jupyter
