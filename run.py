@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import random
+import shutil
 from datetime import datetime
 
 import numpy as np
@@ -26,6 +27,8 @@ import yaml
 from sklearn.model_selection import StratifiedGroupKFold
 
 from exp.exp_classification import Exp_Classification
+# re-exported so `from run import stratified_group_kfold_splits` keeps working
+from utils.splits import repeated_cv_splits, stratified_group_kfold_splits  # noqa: F401
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -76,6 +79,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--n_folds', type=int, default=5,
                         help='Number of CV folds (StratifiedGroupKFold at subject level). '
                              'Set to 1 to use a single stratified train/val split instead.')
+    parser.add_argument('--n_repeats', type=int, default=1,
+                        help='Repeat cross-validation with different fold assignments '
+                             '(seed fold_seed + r for repeat r).')
+    parser.add_argument('--fold_seed', type=int, default=42,
+                        help='Seed for fold assignment; 42 reproduces the original splits.')
+    parser.add_argument('--only_repeat', type=int, default=None,
+                        help='Run a single repeat (0-based). Use this to run repeats as '
+                             'separate cluster jobs; evaluate.py merges their outputs.')
+    parser.add_argument('--results_dir', type=str, default=None,
+                        help='Where cv_results.json and oof_predictions.csv are written. '
+                             'Default: <checkpoints>/<model>_seed<seed>_<timestamp>')
+    parser.add_argument('--keep_checkpoints', action='store_true', default=False,
+                        help='Keep per-fold model weights (deleted after testing by default).')
     parser.add_argument('--val_ratio', type=float, default=0.15,
                         help='Fraction of training subjects used as validation within each fold '
                              '(only used when n_folds > 1).')
@@ -179,57 +195,6 @@ def merge_config(args: argparse.Namespace) -> argparse.Namespace:
 # Split helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def stratified_group_kfold_splits(subject_ids: np.ndarray, labels: np.ndarray, n_folds: int):
-    """
-    Yields (train_idx, val_idx, test_idx) index triples at the *window* level,
-    ensuring all windows from the same subject stay in the same split.
-
-    Strategy:
-      - Outer fold (StratifiedGroupKFold, n_folds): defines test set for each fold.
-      - Inner split from the remaining train subjects: 15 % → validation.
-
-    This gives a clean 3-way split with no leakage across subjects.
-    """
-    sgkf = StratifiedGroupKFold(n_splits=n_folds, shuffle=True, random_state=42)
-
-    # We need subject-level labels for stratification.
-    # Derive them from the first occurrence of each subject.
-    unique_subjects, first_occ = np.unique(subject_ids, return_index=True)
-    subject_labels = labels[first_occ]
-
-    # StratifiedGroupKFold.split needs arrays with len == n_windows
-    X_dummy = np.zeros(len(subject_ids))
-
-    for train_val_idx, test_idx in sgkf.split(X_dummy, labels, groups=subject_ids):
-        # Further split train_val into train / val (at subject level)
-        train_val_subjects = np.unique(subject_ids[train_val_idx])
-        tv_labels = np.array([
-            subject_labels[unique_subjects == s][0] for s in train_val_subjects
-        ])
-
-        # Inner stratified split of subjects
-        n_val_subjects = max(1, int(len(train_val_subjects) * 0.15))
-        pos_subjects  = train_val_subjects[tv_labels == 1]
-        neg_subjects  = train_val_subjects[tv_labels == 0]
-
-        # Keep class proportion in val
-        n_val_pos = max(1, round(n_val_subjects * tv_labels.mean()))
-        n_val_neg = n_val_subjects - n_val_pos
-
-        rng = np.random.default_rng(42)
-        val_subjects = np.concatenate([
-            rng.choice(pos_subjects, min(n_val_pos, len(pos_subjects)), replace=False),
-            rng.choice(neg_subjects, min(n_val_neg, len(neg_subjects)), replace=False),
-        ])
-        train_subjects = np.setdiff1d(train_val_subjects, val_subjects)
-
-        train_idx = np.where(np.isin(subject_ids, train_subjects))[0]
-        val_idx   = np.where(np.isin(subject_ids, val_subjects))[0]
-        # test_idx already at window level from outer fold
-
-        yield train_idx, val_idx, test_idx
-
-
 def single_split(subject_ids: np.ndarray, labels: np.ndarray, val_ratio: float = 0.15):
     """
     Fallback single train/val/test split when n_folds=1.
@@ -279,19 +244,24 @@ def main():
     base_setting = f"{args.model}_seed{args.seed}_{timestamp}"
     print(f"Experiment: {base_setting}")
 
-    # ── cross-validation ──────────────────────────────────────────────────────
+    # ── cross-validation (optionally repeated) ───────────────────────────────
     if args.n_folds > 1:
-        fold_iter = enumerate(stratified_group_kfold_splits(subject_ids, labels, args.n_folds))
+        splits = repeated_cv_splits(subject_ids, labels, args.n_folds,
+                                    n_repeats=args.n_repeats, fold_seed=args.fold_seed,
+                                    val_ratio=args.val_ratio, only_repeat=args.only_repeat)
     else:
-        fold_iter = enumerate(single_split(subject_ids, labels, args.val_ratio))
+        splits = ((0, 0, tr, va, te) for tr, va, te in
+                  single_split(subject_ids, labels, args.val_ratio))
 
-    fold_results = []
+    results_dir = args.results_dir or os.path.join(args.checkpoints, base_setting)
+    os.makedirs(results_dir, exist_ok=True)
 
-    for fold, (train_idx, val_idx, test_idx) in fold_iter:
-        fold_tag = f"fold{fold+1}" if args.n_folds > 1 else "single"
+    fold_results, oof_rows = [], []
+    for repeat, fold, train_idx, val_idx, test_idx in splits:
+        fold_tag = f"r{repeat}_fold{fold+1}" if args.n_folds > 1 else "single"
         setting  = f"{base_setting}_{fold_tag}"
         print(f"\n{'='*60}")
-        print(f"  Fold {fold+1}/{args.n_folds}  |  "
+        print(f"  Repeat {repeat}  Fold {fold+1}/{args.n_folds}  |  "
               f"train={len(train_idx)}  val={len(val_idx)}  test={len(test_idx)}")
         print(f"  Positive rate — train:{labels[train_idx].mean():.3f}  "
               f"val:{labels[val_idx].mean():.3f}  test:{labels[test_idx].mean():.3f}")
@@ -303,32 +273,47 @@ def main():
 
         exp = Exp_Classification(args)
         exp.train(setting)
-        metrics = exp.test(setting)   # expected to return a dict with at least 'auroc', 'acc'
+        metrics = exp.test(setting)
 
-        fold_results.append({"fold": fold + 1, "setting": setting, **metrics})
-        print(f"  Fold {fold+1} result: {metrics}")
+        # out-of-fold predictions: one row per test window
+        for i, p in zip(test_idx, np.asarray(exp.test_probs).reshape(-1)):
+            oof_rows.append((repeat, fold + 1, int(i), str(subject_ids[i]), int(labels[i]), float(p)))
 
-    # ── aggregate results ─────────────────────────────────────────────────────
+        fold_results.append({"repeat": repeat, "fold": fold + 1, "setting": setting, **metrics})
+        print(f"  Repeat {repeat} fold {fold+1} result: {metrics}")
+
+        if not args.keep_checkpoints:
+            shutil.rmtree(os.path.join(args.checkpoints, setting), ignore_errors=True)
+
+    # ── per-fold metrics (descriptive; scripts/evaluate.py gives the subject-level
+    #    pooled AUROC with confidence intervals) ──────────────────────────────
+    n_rep = len(set(r["repeat"] for r in fold_results))
     print(f"\n{'='*60}")
-    print(f"  {args.n_folds}-Fold CV Summary  ({args.model})")
+    print(f"  {args.n_folds}-fold CV x {n_rep} repeat(s)  ({args.model})")
     print(f"{'='*60}")
 
-    metric_keys = [k for k in fold_results[0] if k not in ("fold", "setting")]
+    metric_keys = [k for k in fold_results[0] if k not in ("repeat", "fold", "setting")]
     summary = {}
     for key in metric_keys:
         vals = [r[key] for r in fold_results]
-        mean, std = float(np.mean(vals)), float(np.std(vals))
+        mean, std = float(np.nanmean(vals)), float(np.nanstd(vals))
         summary[key] = {"mean": mean, "std": std, "per_fold": vals}
         print(f"  {key:12s}  {mean:.4f} ± {std:.4f}")
 
     # ── save results ──────────────────────────────────────────────────────────
-    results_dir = os.path.join(args.checkpoints, base_setting)
-    os.makedirs(results_dir, exist_ok=True)
+    oof_path = os.path.join(results_dir, "oof_predictions.csv")
+    with open(oof_path, "w") as f:
+        f.write("repeat,fold,window_index,subject_id,y,prob\n")
+        for row in oof_rows:
+            f.write(",".join(str(v) for v in row) + "\n")
+
+    saved_args = {k: v for k, v in vars(args).items() if k not in ("train_idx", "val_idx", "test_idx")}
     results_path = os.path.join(results_dir, "cv_results.json")
     with open(results_path, "w") as f:
-        json.dump({"args": vars(args), "fold_results": fold_results, "summary": summary},
+        json.dump({"args": saved_args, "fold_results": fold_results, "summary": summary},
                   f, indent=2, default=str)
     print(f"\nResults saved → {results_path}")
+    print(f"Out-of-fold predictions → {oof_path}")
 
 
 if __name__ == "__main__":

@@ -270,7 +270,10 @@ class Exp_Classification(Exp_Basic):
 
         criterion = self._select_criterion()
         threshold = getattr(self, 'optimal_threshold', 0.5)   # ← use val-tuned threshold
-        test_loss, test_metric, _, _ = self.validate(test_loader, criterion, threshold=threshold)
+        test_loss, test_metric, test_probs, test_trues = self.validate(
+            test_loader, criterion, threshold=threshold)
+        # kept so run.py can save out-of-fold predictions (order matches test_idx)
+        self.test_probs, self.test_trues = test_probs, test_trues
 
         print(
             f"[Test]  Loss {test_loss:.4f} | Threshold {threshold:.3f} | "

@@ -109,3 +109,61 @@ def subject_wise_stratified_split(
     )
 
     return train_idx, val_idx
+
+def stratified_group_kfold_splits(subject_ids, labels, n_folds, seed=42, val_ratio=0.15):
+    """
+    Yield (train_idx, val_idx, test_idx) at the window level, with every window of a
+    subject in the same split.
+
+    - Outer folds (StratifiedGroupKFold, n_folds) define the test set.
+    - Within each fold, `val_ratio` of the remaining subjects (stratified by label) form
+      the validation set used for early stopping and threshold selection.
+
+    `seed` controls both the fold assignment and the inner validation split, so different
+    seeds give the independent repetitions used for repeated cross-validation. seed=42 and
+    val_ratio=0.15 reproduce the original behaviour of run.py.
+    """
+    from sklearn.model_selection import StratifiedGroupKFold
+
+    subject_ids = np.asarray(subject_ids)
+    labels = np.asarray(labels)
+    sgkf = StratifiedGroupKFold(n_splits=n_folds, shuffle=True, random_state=seed)
+
+    unique_subjects, first_occ = np.unique(subject_ids, return_index=True)
+    subject_labels = labels[first_occ]
+    X_dummy = np.zeros(len(subject_ids))
+
+    for train_val_idx, test_idx in sgkf.split(X_dummy, labels, groups=subject_ids):
+        train_val_subjects = np.unique(subject_ids[train_val_idx])
+        tv_labels = np.array([subject_labels[unique_subjects == s][0] for s in train_val_subjects])
+
+        n_val_subjects = max(1, int(len(train_val_subjects) * val_ratio))
+        pos_subjects = train_val_subjects[tv_labels == 1]
+        neg_subjects = train_val_subjects[tv_labels == 0]
+        n_val_pos = max(1, round(n_val_subjects * tv_labels.mean()))
+        n_val_neg = n_val_subjects - n_val_pos
+
+        rng = np.random.default_rng(seed)
+        val_subjects = np.concatenate([
+            rng.choice(pos_subjects, min(n_val_pos, len(pos_subjects)), replace=False),
+            rng.choice(neg_subjects, min(n_val_neg, len(neg_subjects)), replace=False),
+        ])
+        train_subjects = np.setdiff1d(train_val_subjects, val_subjects)
+
+        train_idx = np.where(np.isin(subject_ids, train_subjects))[0]
+        val_idx = np.where(np.isin(subject_ids, val_subjects))[0]
+        yield train_idx, val_idx, test_idx
+
+
+def repeated_cv_splits(subject_ids, labels, n_folds, n_repeats=1, fold_seed=42,
+                       val_ratio=0.15, only_repeat=None):
+    """
+    Yield (repeat, fold, train_idx, val_idx, test_idx) for repeated cross-validation.
+    Repeat r uses seed fold_seed + r, so any script that calls this with the same
+    arguments gets identical splits (training runs, baselines, ensembles).
+    """
+    repeats = range(n_repeats) if only_repeat is None else [only_repeat]
+    for r in repeats:
+        for f, (tr, va, te) in enumerate(stratified_group_kfold_splits(
+                subject_ids, labels, n_folds, seed=fold_seed + r, val_ratio=val_ratio)):
+            yield r, f, tr, va, te

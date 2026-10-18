@@ -4,6 +4,8 @@ pandas
 scikit-learn>=1.0
 pyyaml
 matplotlib
+wfdb          # reads the CTU-UHB PhysioNet records
+pytest
 # Only needed for dataPreprocessing.ipynb
 xlrd
 openpyxl
