@@ -114,6 +114,30 @@ Cesarean deliveries are also over-represented among positives (15 of 46 cesarean
 - **reports subject-level metrics** pooled across folds and averaged over repeats, with 95%
   stratified bootstrap intervals. With 40 positives, expect intervals of roughly ±0.08 AUROC.
 
+## Running on CHTC
+
+`chtc/` runs the repeated cross-validation as one GPU job per window file and repeat
+(2 label thresholds x 5 repeats = 10 jobs), then evaluates everything together.
+
+```bash
+# on the submit node, from the repository root, with both window files in dataset/
+mkdir -p chtc/logs
+condor_submit chtc/cnn_lstm.sub
+
+# when the jobs finish: unpack outputs, run the baselines on the same folds, evaluate
+bash chtc/collect_and_evaluate.sh
+```
+
+| File | Role |
+| --- | --- |
+| `chtc/run_cv.sh` | Job wrapper: installs missing Python packages into the job directory, runs one repeat of `run.py`, packs the results |
+| `chtc/cnn_lstm.sub` | Submit file; set `container_image` to your own image if you have one |
+| `chtc/jobs.txt` | One line per job: window file stem, repeat |
+| `chtc/collect_and_evaluate.sh` | Unpacks `results_*.tar.gz`, runs `baselines.py` if needed, then `evaluate.py` per window file |
+
+To add a model, copy `cnn_lstm.sub`, change `run_name` and `config`, and submit; the
+collection script picks up every run directory under `results/<window file>/`.
+
 ## Tests
 
 ```bash
@@ -192,7 +216,8 @@ scripts/evaluate.py          Subject-level AUROC/AUPRC with bootstrap intervals 
 scripts/audit_raw_data.py    Per-file audit of raw clinical exports (format, truncation, timing)
 extract_windows.py       Cuts full clinical recordings into non-overlapping 30-minute windows
 dataPreprocessing.ipynb  Cleaning and segmentation of the clinical recordings (outputs stripped)
-tests/                   Tests for the CTU-UHB pipeline
+chtc/                    HTCondor submit file, job wrapper and result collection for CHTC
+tests/                   Tests for the CTU-UHB pipeline and evaluation
 configs/                 One YAML file per model, plus shared defaults
 data_provider/           CTU-UHB loader (ctu_uhb.py), dataset classes and data loaders
 exp/                     Training, validation, and test loops

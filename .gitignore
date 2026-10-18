@@ -29,3 +29,8 @@ env/
 .DS_Store
 .vscode/
 .idea/
+
+# CHTC job logs and returned outputs
+chtc/logs/
+chtc/returned/
+results_*.tar.gz

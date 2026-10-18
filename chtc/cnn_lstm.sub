@@ -1,0 +1,38 @@
+# CNN-LSTM on CTU-UHB: one job per (window file, repeat) listed in jobs.txt.
+# Submit from the repository root:   condor_submit chtc/cnn_lstm.sub
+#
+# Before the first submit:
+#   - build the window files (scripts/prepare_ctu_uhb.py) so dataset/<stem>.npz exists
+#   - mkdir -p chtc/logs
+#   - set container_image to the image you already use on CHTC, if you have one;
+#     run_cv.sh installs scikit-learn / pandas / pyyaml if the image lacks them.
+
+run_name     = cnn_lstm
+config       = configs/ctu_uhb_cnn_lstm.yaml
+
+container_image = docker://pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime
+
+executable   = chtc/run_cv.sh
+arguments    = $(data_stem) $(repeat) $(config) $(run_name)
+
+should_transfer_files   = YES
+when_to_transfer_output = ON_EXIT
+transfer_input_files    = run.py, exp, model, layers, data_provider, utils, configs, dataset/$(data_stem).npz
+transfer_output_files   = results_$(data_stem)_$(run_name)_r$(repeat).tar.gz
+
+log    = chtc/logs/$(run_name)_$(data_stem)_r$(repeat).log
+output = chtc/logs/$(run_name)_$(data_stem)_r$(repeat).out
+error  = chtc/logs/$(run_name)_$(data_stem)_r$(repeat).err
+
+# CHTC GPU Lab. These are the attributes CHTC documents for GPU jobs as far as I know;
+# compare with your own working GPU submit files and adjust if they differ.
+request_gpus   = 1
++WantGPULab    = true
++GPUJobLength  = "short"
+require_gpus   = (GlobalMemoryMb >= 8000)
+
+request_cpus   = 2
+request_memory = 8GB
+request_disk   = 10GB
+
+queue data_stem, repeat from chtc/jobs.txt
