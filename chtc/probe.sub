@@ -1,0 +1,26 @@
+# Linear probes on the frozen embeddings: one CPU job per line of probe_jobs.txt.
+# Run after extract.sub has finished and collect_and_evaluate.sh has unpacked embeddings/.
+# Submit from the repository root:   condor_submit chtc/probe.sub
+
+n_repeats       = 5
+container_image = docker://python:3.11-slim
+
+executable   = chtc/run_probe.sh
+arguments    = $(data_stem) $(model) $(pool) $(shortcuts) $(n_repeats)
+
+should_transfer_files   = YES
+when_to_transfer_output = ON_EXIT
+transfer_input_files    = scripts, utils, dataset/$(data_stem).npz, embeddings/ctu_uhb_stage1_end_w30m_n1_v0.2__$(model).npz
+
+on_exit_hold        = (ExitCode =!= 0)
+on_exit_hold_reason = strcat("run_probe.sh exited with code ", ExitCode, "; see chtc/logs/probe_$(data_stem)_$(model)_$(pool)_$(shortcuts).out")
+
+log    = chtc/logs/probe_$(data_stem)_$(model)_$(pool)_$(shortcuts).log
+output = chtc/logs/probe_$(data_stem)_$(model)_$(pool)_$(shortcuts).out
+error  = chtc/logs/probe_$(data_stem)_$(model)_$(pool)_$(shortcuts).err
+
+request_cpus   = 1
+request_memory = 4GB
+request_disk   = 4GB
+
+queue data_stem, model, pool, shortcuts from chtc/probe_jobs.txt

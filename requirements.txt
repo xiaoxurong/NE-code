@@ -10,3 +10,9 @@ pytest
 xlrd
 openpyxl
 jupyter
+# Only needed for scripts/extract_embeddings.py (pretrained encoders).
+# Install momentfm with:  pip install --no-deps momentfm
+mantis-tsfm
+transformers
+einops
+datasets

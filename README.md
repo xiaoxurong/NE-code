@@ -114,6 +114,38 @@ Cesarean deliveries are also over-represented among positives (15 of 46 cesarean
 - **reports subject-level metrics** pooled across folds and averaged over repeats, with 95%
   stratified bootstrap intervals. With 40 positives, expect intervals of roughly ±0.08 AUROC.
 
+## Pretrained time-series encoders (frozen embeddings + linear probe)
+
+Two general-purpose pretrained encoders are tested without fine-tuning:
+[MOMENT](https://github.com/moment-timeseries-foundation-model/moment) (base, large) and
+[Mantis / MantisV2](https://github.com/vfeofanov/mantis) (final layer, and layer 2 as the
+Mantis authors recommend for classification).
+
+- **Full resolution.** Both encoders take 512 samples per channel. Each 30-minute window is
+  cut into 14 consecutive 512-sample chunks (about 2 minutes each) instead of being
+  downsampled, which would erase short-term FHR variability. Chunk embeddings are pooled
+  (mean, or mean and max) per channel.
+- **Missing signal.** MOMENT receives the observed-mask; Mantis gets gaps linearly
+  interpolated. Chunks with under half the signal observed are left out of the pooling.
+- **Probe.** `scripts/probe.py` fits a standardized L2 logistic regression on the same
+  repeated folds as every other model. Its regularization is chosen by an inner
+  cross-validation on the training recordings only.
+- **Beyond the shortcuts?** `--add_shortcuts` adds the signal-loss and recording-length
+  features, with the embedding reduced to 32 PCA components inside each training fold so the
+  two groups compete on equal terms. If this run beats the shortcut baseline, the embedding
+  carries information the shortcuts do not.
+
+```bash
+python scripts/extract_embeddings.py --data dataset/$D.npz --model moment-base \
+    --out embeddings/${D%_ph*}__moment-base.npz           # GPU recommended
+python scripts/probe.py --data dataset/$D.npz --embeddings embeddings/${D%_ph*}__moment-base.npz \
+    --pool meanmax --n_repeats 5 --out_dir results/$D/probe_moment-base_meanmax
+```
+
+Embeddings do not depend on the label, so one extraction serves both pH thresholds.
+Extraction needs `momentfm` (install with `--no-deps`; its pinned versions are outdated),
+`mantis-tsfm`, `transformers`, `einops` and `datasets`.
+
 ## Running on CHTC
 
 `chtc/` runs the repeated cross-validation as one GPU job per window file and repeat
@@ -133,7 +165,18 @@ bash chtc/collect_and_evaluate.sh
 | `chtc/run_cv.sh` | Job wrapper: installs missing Python packages into the job directory, runs one repeat of `run.py`, packs the results |
 | `chtc/cnn_lstm.sub` | Submit file; set `container_image` to your own image if you have one |
 | `chtc/jobs.txt` | One line per job: window file stem, repeat |
-| `chtc/collect_and_evaluate.sh` | Unpacks `results_*.tar.gz`, runs `baselines.py` if needed, then `evaluate.py` per window file |
+| `chtc/collect_and_evaluate.sh` | Unpacks job outputs (`results_*.tar.gz`, `emb_*.tar.gz`), runs `baselines.py` if needed, then `evaluate.py` per window file |
+| `chtc/extract.sub`, `chtc/run_extract.sh` | One GPU job per encoder in `extract_models.txt`; writes `embeddings/` |
+| `chtc/probe.sub`, `chtc/run_probe.sh` | One CPU job per line of `probe_jobs.txt` (threshold x encoder x with/without shortcuts) |
+
+Pretrained-encoder workflow:
+
+```bash
+condor_submit chtc/extract.sub           # 6 GPU jobs, one per encoder
+bash chtc/collect_and_evaluate.sh        # unpacks embeddings/
+condor_submit chtc/probe.sub             # 24 CPU jobs
+bash chtc/collect_and_evaluate.sh        # final tables, both thresholds
+```
 
 To add a model, copy `cnn_lstm.sub`, change `run_name` and `config`, and submit; the
 collection script picks up every run directory under `results/<window file>/`.
@@ -204,6 +247,8 @@ baselines never look at the heart rate pattern; a model has to beat them to show
 | Shortcut: missingness | 0.683 [0.588, 0.771] | 0.574 [0.510, 0.634] | |
 | Shortcut: missingness + length | 0.716 [0.624, 0.800] | 0.638 [0.580, 0.693] | reference |
 | CNN-LSTM | | | |
+| MOMENT-base, frozen + linear probe | | | |
+| Mantis, frozen + linear probe | | | |
 
 ## Repository structure
 
@@ -212,6 +257,8 @@ run.py                   Entry point: cross-validated training and evaluation
 run_ensemble.py          Ensemble of several models over identical folds
 scripts/prepare_ctu_uhb.py   Downloads CTU-UHB, builds the store and window files, checks for confounds
 scripts/baselines.py         Shortcut baselines (missingness, recording length) on the same folds
+scripts/extract_embeddings.py  Frozen MOMENT / Mantis embeddings at full resolution (14 chunks per window)
+scripts/probe.py             Linear probe on embeddings, same folds, regularization tuned inside each fold
 scripts/evaluate.py          Subject-level AUROC/AUPRC with bootstrap intervals and baseline comparison
 scripts/audit_raw_data.py    Per-file audit of raw clinical exports (format, truncation, timing)
 extract_windows.py       Cuts full clinical recordings into non-overlapping 30-minute windows

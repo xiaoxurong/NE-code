@@ -34,3 +34,7 @@ env/
 chtc/logs/
 chtc/returned/
 results_*.tar.gz
+
+# embeddings from pretrained encoders
+embeddings/
+emb_*.tar.gz

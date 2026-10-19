@@ -33,7 +33,11 @@ error  = chtc/logs/$(run_name)_$(data_stem)_r$(repeat).err
 request_gpus   = 1
 +WantGPULab    = true
 +GPUJobLength  = "short"
-require_gpus   = (GlobalMemoryMb >= 8000)
+# The PyTorch build in container_image (2.4.1, CUDA 12.1) has no kernels for GPUs with
+# compute capability 10.0 or higher (Blackwell): jobs there fail with "no kernel image is
+# available for execution on the device". Keep jobs on GPUs it supports, or move to a
+# newer PyTorch image before removing the upper bound.
+require_gpus   = (Capability >= 7.0) && (Capability < 10.0) && (GlobalMemoryMb >= 8000)
 
 request_cpus   = 2
 request_memory = 8GB

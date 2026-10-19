@@ -1,0 +1,39 @@
+# Frozen embeddings from pretrained encoders: one GPU job per model in extract_models.txt.
+# Submit from the repository root:   condor_submit chtc/extract.sub
+# Afterwards run  bash chtc/collect_and_evaluate.sh  to unpack embeddings/ before probing.
+#
+# The windows are identical for both label thresholds, so embeddings are extracted once
+# (from the pH 7.05 file) and reused for 7.15.
+
+data_stem       = ctu_uhb_stage1_end_w30m_n1_v0.2_ph7.05
+container_image = docker://pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime
+
+executable   = chtc/run_extract.sh
+arguments    = $(data_stem) $(model)
+
+should_transfer_files   = YES
+when_to_transfer_output = ON_EXIT
+transfer_input_files    = scripts, dataset/$(data_stem).npz
+transfer_output_files   = emb_ctu_uhb_stage1_end_w30m_n1_v0.2__$(model).tar.gz
+
+on_exit_hold        = (ExitCode =!= 0)
+on_exit_hold_reason = strcat("run_extract.sh exited with code ", ExitCode, "; see chtc/logs/extract_$(model).out and .err")
+
+log    = chtc/logs/extract_$(model).log
+output = chtc/logs/extract_$(model).out
+error  = chtc/logs/extract_$(model).err
+
+request_gpus   = 1
++WantGPULab    = true
++GPUJobLength  = "short"
+# The PyTorch build in container_image (2.4.1, CUDA 12.1) has no kernels for GPUs with
+# compute capability 10.0 or higher (Blackwell): jobs there fail with "no kernel image is
+# available for execution on the device". Keep jobs on GPUs it supports, or move to a
+# newer PyTorch image before removing the upper bound.
+require_gpus   = (Capability >= 7.0) && (Capability < 10.0) && (GlobalMemoryMb >= 16000)
+
+request_cpus   = 2
+request_memory = 16GB
+request_disk   = 20GB
+
+queue model from chtc/extract_models.txt

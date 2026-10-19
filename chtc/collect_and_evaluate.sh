@@ -11,6 +11,15 @@ N_FOLDS="${N_FOLDS:-5}"
 REFERENCE="${REFERENCE:-missingness_length}"
 
 shopt -s nullglob
+# embeddings from extract.sub jobs -> embeddings/
+emb_tarballs=(emb_*.tar.gz)
+for t in "${emb_tarballs[@]}"; do
+    tar xzf "$t" && mkdir -p chtc/returned && mv "$t" chtc/returned/
+done
+[ ${#emb_tarballs[@]} -gt 0 ] && echo "unpacked ${#emb_tarballs[@]} embedding files into embeddings/"
+emb_failed=(embeddings/*.FAILED)
+[ ${#emb_failed[@]} -gt 0 ] && printf 'WARNING: extraction failed for %s\n' "${emb_failed[@]}"
+
 tarballs=(results_*.tar.gz)
 for t in "${tarballs[@]}"; do
     tar xzf "$t" && mkdir -p chtc/returned && mv "$t" chtc/returned/
@@ -22,6 +31,7 @@ if [ ${#failed[@]} -gt 0 ]; then
     printf '  %s\n' "${failed[@]%/FAILED}"
 fi
 
+[ -d results ] || { echo "no results/ yet"; exit 0; }
 for stem_dir in results/*/; do
     stem=$(basename "$stem_dir")
     data="dataset/$stem.npz"
