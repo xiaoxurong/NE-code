@@ -29,14 +29,24 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || ec
 
 export HF_HOME="$PWD/hf_cache"
 export PYTHONPATH="$PWD/pydeps${PYTHONPATH:+:$PYTHONPATH}"
-# momentfm pins very old numpy/transformers versions; install it without its pins and add
-# what it actually imports. Tested with transformers 5.x and huggingface_hub 2.x.
-# mantis-tsfm would pull a second copy of PyTorch, so it is installed without its pins too.
+# Version pins, tested together:
+#  - transformers 5.x silently disables itself with PyTorch < 2.6 ("T5EncoderModel requires
+#    the PyTorch library"), and the container has PyTorch 2.4.1, so transformers stays on 4.46.
+#  - transformers 4.46 needs huggingface_hub < 1.0; recent `datasets` (imported by Mantis)
+#    needs a newer hub, so datasets is pinned to 4.0.0, which works with hub 0.26.
+#  - momentfm and mantis-tsfm are installed without their own pins: momentfm pins
+#    numpy 1.25 / transformers 4.33, and mantis-tsfm would pull a second copy of PyTorch.
 python3 -m pip install --quiet --no-cache-dir --target "$PWD/pydeps" --no-deps momentfm mantis-tsfm
 python3 -m pip install --quiet --no-cache-dir --target "$PWD/pydeps" \
-    transformers huggingface_hub safetensors einops datasets tqdm scikit-learn pandas
+    "transformers==4.46.3" "huggingface_hub==0.26.5" "datasets==4.0.0" \
+    safetensors einops tqdm scikit-learn pandas
 python3 -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
-python3 -c "import momentfm, mantis.trainer, transformers; print('momentfm, mantis, transformers', transformers.__version__, 'import fine')"
+python3 - <<'PY'
+import transformers, huggingface_hub, momentfm, mantis.trainer
+from transformers.utils import is_torch_available
+print("transformers", transformers.__version__, "| hub", huggingface_hub.__version__)
+assert is_torch_available(), "transformers cannot use this PyTorch; check the version pins"
+PY
 
 python3 scripts/extract_embeddings.py --data "$DATA_STEM.npz" --model "$MODEL" --out "$OUT" "$@"
 test -s "$OUT"
