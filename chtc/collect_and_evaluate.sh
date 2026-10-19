@@ -16,6 +16,11 @@ for t in "${tarballs[@]}"; do
     tar xzf "$t" && mkdir -p chtc/returned && mv "$t" chtc/returned/
 done
 echo "unpacked ${#tarballs[@]} job outputs"
+failed=(results/*/*/r*/FAILED)
+if [ ${#failed[@]} -gt 0 ]; then
+    echo "WARNING: ${#failed[@]} job(s) failed; their repeats are missing from the evaluation:"
+    printf '  %s\n' "${failed[@]%/FAILED}"
+fi
 
 for stem_dir in results/*/; do
     stem=$(basename "$stem_dir")

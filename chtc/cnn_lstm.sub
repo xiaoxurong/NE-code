@@ -20,6 +20,10 @@ when_to_transfer_output = ON_EXIT
 transfer_input_files    = run.py, exp, model, layers, data_provider, utils, configs, dataset/$(data_stem).npz
 transfer_output_files   = results_$(data_stem)_$(run_name)_r$(repeat).tar.gz
 
+# A failed job still returns its tarball (with a FAILED file); hold it with a clear reason.
+on_exit_hold        = (ExitCode =!= 0)
+on_exit_hold_reason = strcat("run_cv.sh exited with code ", ExitCode, "; see chtc/logs/$(run_name)_$(data_stem)_r$(repeat).out and .err")
+
 log    = chtc/logs/$(run_name)_$(data_stem)_r$(repeat).log
 output = chtc/logs/$(run_name)_$(data_stem)_r$(repeat).out
 error  = chtc/logs/$(run_name)_$(data_stem)_r$(repeat).err
