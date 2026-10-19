@@ -1,0 +1,37 @@
+# configs/ctu_uhb_cnn_lstm_focal.yaml
+# The configuration of the FIRST CTU-UHB CNN-LSTM runs (results/<window file>/cnn_lstm_focal),
+# kept for reproducibility. Fixed focal alpha and early stopping on validation loss: at
+# pH < 7.15 the model collapsed to a near-constant output. Use ctu_uhb_cnn_lstm.yaml instead.
+# CNN-LSTM on the public CTU-UHB data. Build the window file first:
+#   python scripts/prepare_ctu_uhb.py --wfdb_dir data/ctu-uhb --download
+# If you change --window_min, --ph_threshold or --no_mask_channels there, pass the
+# matching --data_path, --seq_len and --in_channels/--enc_in (the script prints them).
+
+model:         "CNN_LSTM"
+data:          "CTG"
+root_path:     "./dataset/"
+data_path:     "ctu_uhb_stage1_end_w30m_n1_v0.2_ph7.05.npz"
+seq_len:       7200          # 30 min at 4 Hz
+in_channels:   4             # FHR, UC, and their observed-masks
+enc_in:        4
+num_classes:   2
+
+lstm_hidden:   64
+lstm_layers:   1
+dropout:       0.3
+
+# class imbalance: positives are a minority at pH < 7.05
+use_focal:     true
+focal_alpha:   0.85
+focal_gamma:   2.0
+
+n_folds:       5
+n_repeats:     5             # repeated CV; use --only_repeat r to run repeats as separate jobs
+fold_seed:     42
+seed:          42
+train_epochs:  100
+patience:      20
+batch_size:    32
+learning_rate: 1.0e-4
+weight_decay:  1.0e-3
+num_workers:   4

@@ -46,10 +46,10 @@ same folds, and evaluate:
 
 ```bash
 D=ctu_uhb_stage1_end_w30m_n1_v0.2_ph7.05
-python run.py --config configs/ctu_uhb_cnn_lstm.yaml --data_path $D.npz --results_dir results/$D/cnn_lstm
+python run.py --config configs/ctu_uhb_cnn_lstm.yaml --data_path $D.npz --results_dir results/$D/cnn_lstm_wbce
 python scripts/baselines.py --data dataset/$D.npz --n_repeats 5 --out_dir results/$D/baselines
 python scripts/evaluate.py --data dataset/$D.npz \
-    --runs cnn_lstm=results/$D/cnn_lstm \
+    --runs cnn_lstm_wbce=results/$D/cnn_lstm_wbce \
            missingness=results/$D/baselines/missingness \
            missingness_length=results/$D/baselines/missingness_length \
     --reference missingness_length --subset all vaginal --out results/$D/table.csv
@@ -246,9 +246,26 @@ baselines never look at the heart rate pattern; a model has to beat them to show
 | --- | --- | --- | --- |
 | Shortcut: missingness | 0.683 [0.588, 0.771] | 0.574 [0.510, 0.634] | |
 | Shortcut: missingness + length | 0.716 [0.624, 0.800] | 0.638 [0.580, 0.693] | reference |
-| CNN-LSTM | | | |
+| CNN-LSTM, focal loss, early stop on val loss (`cnn_lstm_focal`) | 0.601 [0.513, 0.696] | 0.458 [0.429, 0.486] | worse |
+| CNN-LSTM, weighted BCE, early stop on val AUROC (`cnn_lstm_wbce`) | | | |
 | MOMENT-base, frozen + linear probe | | | |
 | Mantis, frozen + linear probe | | | |
+
+What the first CNN-LSTM runs showed:
+
+- **At pH < 7.05 the network learned delivery mode.** Its scores separate cesarean from
+  vaginal deliveries with AUROC 0.92 and correlate with signal loss; on vaginal deliveries
+  only it is at chance (0.47). Its overall 0.60 is the delivery-mode shortcut, and it is
+  still below the shortcut baseline.
+- **At pH < 7.15 it did not train.** Within every fold its predictions varied by about
+  0.002, so it had collapsed to a constant; the below-0.5 AUROC is noise in that constant.
+  The cause was a focal-loss weight fixed for a different prevalence plus early stopping on
+  validation loss. The corrected configuration weights the positive class from each training
+  fold and keeps the checkpoint with the best validation AUROC; training logs now flag
+  near-constant predictions. A regression test checks that this setup learns a planted signal.
+
+Report the vaginal-delivery subset alongside the full cohort: it removes the delivery-mode
+shortcut by design.
 
 ## Repository structure
 

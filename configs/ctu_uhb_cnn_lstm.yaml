@@ -17,10 +17,15 @@ lstm_hidden:   64
 lstm_layers:   1
 dropout:       0.3
 
-# class imbalance: positives are a minority at pH < 7.05
-use_focal:     true
-focal_alpha:   0.85
-focal_gamma:   2.0
+# class imbalance: BCE with the positive class weighted by n_negative / n_positive of each
+# fold's training labels, so the weight follows the label threshold. (A fixed focal alpha
+# tuned for one prevalence made the model collapse at pH < 7.15; see ctu_uhb_cnn_lstm_focal.yaml.)
+use_focal:     false
+pos_weight:    "auto"
+
+# keep the checkpoint with the best validation AUROC (validation loss barely moves on
+# imbalanced data and tended to keep an early, near-constant model)
+early_stop_metric: "auroc"
 
 n_folds:       5
 n_repeats:     5             # repeated CV; use --only_repeat r to run repeats as separate jobs

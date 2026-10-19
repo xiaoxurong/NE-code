@@ -69,15 +69,45 @@ class Exp_Classification(Exp_Basic):
         wd = getattr(self.args, 'weight_decay', 0.0)
         return optim.Adam(self.model.parameters(), lr=self.args.learning_rate, weight_decay=wd)
 
-    def _select_criterion(self):
+    def _select_criterion(self, train_labels=None):
+        """
+        Binary: focal loss if use_focal, otherwise BCE-with-logits. With pos_weight='auto'
+        the positive class is weighted by n_negative / n_positive of THIS fold's training
+        labels, so the weighting follows the prevalence of whatever label is being used.
+        A number sets the weight directly; 'none' (default) leaves BCE unweighted.
+        """
         if self.args.num_classes == 2:
             if getattr(self.args, 'use_focal', False):
                 alpha = getattr(self.args, 'focal_alpha', 0.75)
                 gamma = getattr(self.args, 'focal_gamma', 2.0)
                 print(f"Using FocalLoss (alpha={alpha}, gamma={gamma})")
                 return FocalLoss(alpha=alpha, gamma=gamma)
+            pw = str(getattr(self.args, 'pos_weight', 'none')).lower()
+            if pw == 'auto':
+                if train_labels is None:
+                    return nn.BCEWithLogitsLoss()  # loss value only (validation/test reporting)
+                y = np.asarray(train_labels).reshape(-1)
+                n_pos, n_neg = int((y == 1).sum()), int((y == 0).sum())
+                weight = n_neg / max(n_pos, 1)
+                print(f"Using BCEWithLogitsLoss with pos_weight={weight:.3f} "
+                      f"({n_neg} negative / {n_pos} positive training windows)")
+                return nn.BCEWithLogitsLoss(pos_weight=torch.tensor(weight, device=self.device))
+            if pw not in ('none', ''):
+                return nn.BCEWithLogitsLoss(pos_weight=torch.tensor(float(pw), device=self.device))
             return nn.BCEWithLogitsLoss()
         return nn.CrossEntropyLoss()
+
+    def _early_stop_value(self, val_loss, val_metric):
+        """Quantity early stopping minimises: validation loss, or minus validation AUROC."""
+        if getattr(self.args, 'early_stop_metric', 'loss') == 'auroc':
+            auroc = val_metric.get('auroc', np.nan)
+            return -auroc if np.isfinite(auroc) else np.inf
+        return val_loss
+
+    @staticmethod
+    def _spread_note(probs) -> str:
+        sd = float(np.std(probs))
+        return f" | pred sd {sd:.4f}" + (" (predictions nearly constant)" if sd < 1e-3 else "")
 
     def forward_classification(self, batch_x):
         outputs = self.model(batch_x)
@@ -130,7 +160,7 @@ class Exp_Classification(Exp_Basic):
         # ── Only optimise the linear classifier head ─────────────────────────
         optimizer     = optim.Adam(self.model.classifier.parameters(),
                                    lr=self.args.learning_rate)
-        criterion     = self._select_criterion()
+        criterion     = self._select_criterion(train_labels.numpy())
         early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
 
         # Mini-batch loader over precomputed features
@@ -184,9 +214,10 @@ class Exp_Classification(Exp_Basic):
                 f"Val Loss {val_loss:.4f} | "
                 f"AUROC {val_metric['auroc']:.4f} | "
                 f"F1 {val_metric['f1']:.4f}"
+                + self._spread_note(val_probs)
             )
 
-            early_stopping(val_loss, self.model, path)
+            early_stopping(self._early_stop_value(val_loss, val_metric), self.model, path)
             if early_stopping.early_stop:
                 print("Early stopping triggered.")
                 break
@@ -210,7 +241,7 @@ class Exp_Classification(Exp_Basic):
         os.makedirs(path, exist_ok=True)
 
         optimizer      = self._select_optimizer()
-        criterion      = self._select_criterion()
+        criterion      = self._select_criterion(train_data.y.numpy())
         early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
 
         for epoch in range(self.args.train_epochs):
@@ -233,7 +264,7 @@ class Exp_Classification(Exp_Basic):
                 optimizer.step()
                 train_losses.append(loss.item())
 
-            val_loss, val_metric, _, _ = self.validate(val_loader, criterion)
+            val_loss, val_metric, val_probs, _ = self.validate(val_loader, criterion)
 
             print(
                 f"Epoch {epoch+1:3d} | "
@@ -241,9 +272,10 @@ class Exp_Classification(Exp_Basic):
                 f"Val Loss {val_loss:.4f} | "
                 f"AUROC {val_metric['auroc']:.4f} | "
                 f"F1 {val_metric['f1']:.4f}"
+                + self._spread_note(val_probs)
             )
 
-            early_stopping(val_loss, self.model, path)
+            early_stopping(self._early_stop_value(val_loss, val_metric), self.model, path)
             if early_stopping.early_stop:
                 print("Early stopping triggered.")
                 break

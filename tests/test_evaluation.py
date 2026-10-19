@@ -138,3 +138,39 @@ def test_run_py_writes_out_of_fold_predictions(window_file, tmp_path):
     assert sorted(oof["window_index"]) == list(range(len(y)))
     assert oof["prob"].between(0, 1).all()
     assert not list((tmp_path / "ckpt").rglob("*.pth"))   # weights cleaned up by default
+
+
+def test_cnn_lstm_learns_a_planted_signal_with_weighted_bce(tmp_path):
+    """
+    Regression test for the collapse seen with a fixed focal alpha: with class-weighted BCE
+    and AUROC-based checkpoint selection, the CNN-LSTM must learn an obvious planted signal
+    (positives have a raised, oscillating FHR) at a minority prevalence.
+    """
+    pytest.importorskip("torch")
+    rng = np.random.default_rng(0)
+    n, T = 160, 240
+    sid = np.array([f"S{i:03d}" for i in range(n)])
+    y = (np.arange(n) < 32).astype(int)                      # 20% positive
+    X = rng.standard_normal((n, 4, T)).astype(np.float32) * 0.5
+    t = np.arange(T)
+    X[y == 1, 0] += 1.0 + np.sin(t / 6.0)                    # the planted FHR pattern
+    X[:, 2:] = 1.0                                           # mask channels: all observed
+    path = tmp_path / "planted.npz"
+    np.savez_compressed(path, X=X, y=y, subject_ids=sid, mask=np.ones((n, 2, T), bool),
+                        rec_fhr_missing_frac=np.zeros(n, np.float32),
+                        recording_min=np.full(n, 70, np.float32), delivery_type=np.ones(n))
+    res_dir = tmp_path / "res"
+    out = run("run.py", "--config", "configs/ctu_uhb_cnn_lstm.yaml",
+              "--root_path", str(tmp_path) + "/", "--data_path", path.name,
+              "--seq_len", str(T), "--in_channels", "4", "--enc_in", "4",
+              "--train_epochs", "25", "--patience", "8", "--learning_rate", "1e-3",
+              "--n_folds", "3", "--n_repeats", "1", "--num_workers", "0", "--batch_size", "16",
+              "--checkpoints", str(tmp_path / "ckpt") + "/", "--results_dir", str(res_dir))
+    assert "pos_weight=" in out.stdout and "pred sd" in out.stdout
+    weights = [float(line.split("pos_weight=")[1].split()[0])
+               for line in out.stdout.splitlines() if "pos_weight=" in line]
+    assert all(3.0 < w < 5.0 for w in weights)              # about 128/32 per training fold
+    oof = pd.read_csv(res_dir / "oof_predictions.csv")
+    from sklearn.metrics import roc_auc_score
+    assert roc_auc_score(oof["y"], oof["prob"]) > 0.9
+    assert oof["prob"].std() > 0.01                          # not collapsed

@@ -7,7 +7,9 @@
 #   - set container_image to the image you already use on CHTC, if you have one;
 #     run_cv.sh installs scikit-learn / pandas / pyyaml if the image lacks them.
 
-run_name     = cnn_lstm
+# cnn_lstm_wbce: class-weighted BCE + checkpoint by validation AUROC (configs/ctu_uhb_cnn_lstm.yaml).
+# The first runs used configs/ctu_uhb_cnn_lstm_focal.yaml and are kept as cnn_lstm_focal.
+run_name     = cnn_lstm_wbce
 config       = configs/ctu_uhb_cnn_lstm.yaml
 
 container_image = docker://pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime

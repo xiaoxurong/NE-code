@@ -144,6 +144,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--focal_alpha', type=float, default=0.75,
                         help='Focal loss α — weight for positive class. '
                              'Rule of thumb: 1 - (n_pos/n_total). For 39/290 ≈ 0.87')
+    parser.add_argument('--pos_weight', type=str, default='none',
+                        help="BCE positive-class weight when focal loss is off: 'auto' = "
+                             "n_negative / n_positive of each fold's training labels, a number, "
+                             "or 'none'.")
+    parser.add_argument('--early_stop_metric', type=str, default='loss', choices=['loss', 'auroc'],
+                        help='Validation quantity for early stopping and checkpoint selection.')
     parser.add_argument('--focal_gamma', type=float, default=2.0,
                         help='Focal loss γ — focusing strength. 0=BCE, 2=paper default')
 
@@ -179,7 +185,9 @@ def merge_config(args: argparse.Namespace) -> argparse.Namespace:
         if token.startswith('--'):
             raw = token.lstrip('-').split('=')[0].replace('-', '_')
             if raw.startswith('no_'):
-                explicit_keys.add(raw[3:])   # --no_focal → 'focal'
+                # --no_focal stores into dest 'use_focal'; cover both spellings
+                explicit_keys.add(raw[3:])
+                explicit_keys.add('use_' + raw[3:])
             else:
                 explicit_keys.add(raw)
 
