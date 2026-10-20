@@ -139,6 +139,9 @@ def main():
         src = f"results/{STEM.format(t)}/table.csv"
         tables[t] = pd.read_csv(src)
         shutil.copy(src, f"{args.out_dir}/tables/table_ph{t}.csv")
+        confirm = f"results/{STEM.format(t)}_seed1000/table.csv"   # fresh folds, see README
+        if os.path.exists(confirm):
+            shutil.copy(confirm, f"{args.out_dir}/tables/confirmation_seed1000_ph{t}.csv")
     auroc_overview(tables, f"{args.out_dir}/figures/auroc_overview.png")
     missingness_corr(f"{args.out_dir}/figures/missingness_corr.png")
     print(f"Wrote {args.out_dir}/figures/ and {args.out_dir}/tables/")

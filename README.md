@@ -24,14 +24,14 @@ heart rate and uterine contractions at 4 Hz).
   only, where delivery mode cannot help. Cesarean deliveries are about six times as likely to be
   acidemic in this cohort (15 of 46, against 25 of 506 vaginal deliveries).
 - **Frozen Mantis embeddings carry real heart-rate signal.** A linear probe reaches 0.705
-  [0.633, 0.768] at pH < 7.05 (0.65 on vaginal deliveries only) and 0.61 at pH < 7.15. Unlike
-  the baseline, its predictions barely
-  follow signal loss (Spearman 0.12 against 0.80; below). On its own it does not beat the
-  shortcut baseline.
-- **Mantis and the shortcut features are complementary.** Averaging the two models' ranks
-  (fixed equal weights, no labels used) gives 0.770 [0.700, 0.831], +0.043 [-0.005, +0.091]
-  over the baseline. This combination was chosen after looking at the results, so treat it as
-  exploratory until it is confirmed on held-out data.
+  [0.633, 0.768] at pH < 7.05 (0.69 on new folds; 0.65 on vaginal deliveries only) and 0.61 at
+  pH < 7.15. Unlike the baseline, its predictions barely follow signal loss (Spearman 0.12
+  against 0.80; below). On its own it does not beat the shortcut baseline.
+- **Mantis and the shortcut features are complementary, but the gain is small.** Averaging the
+  two models' ranks (fixed equal weights, no labels used) gives 0.770 [0.700, 0.831], +0.043
+  over the baseline. This combination was chosen after looking at those results, so it was then
+  fixed in advance and rerun on five new fold assignments: there it gives 0.749 [0.675, 0.821],
+  +0.027 [-0.016, +0.071]. The direction holds; the size shrinks and is not significant.
 - **MOMENT's general-purpose embeddings are near chance** on this task (0.49-0.61).
 
 ![Correlation of each model's predicted risk with signal loss](docs/figures/missingness_corr.png)
@@ -56,6 +56,19 @@ AUPRC and every encoder variant, are in [`docs/tables/`](docs/tables).
 With 38 positives, AUROC intervals are about ±0.07-0.09 wide, so differences of a few hundredths
 are not meaningful on their own. The paired bootstrap difference against the shortcut baseline
 is in the tables (`dAUROC vs missingness_length`).
+
+**Confirmation on new folds.** After choosing the combination, it was rerun unchanged on five new
+fold assignments (`--fold_seed 1000`; baseline and probe refit, no settings changed):
+
+| Model, `--fold_seed 1000` | pH < 7.05 | vaginal only | pH < 7.15 | vaginal only |
+| --- | --- | --- | --- | --- |
+| Shortcut: signal loss + recording length | 0.722 [0.633, 0.808] | 0.697 | 0.635 [0.576, 0.691] | 0.633 |
+| Mantis, frozen + linear probe | 0.687 [0.615, 0.754] | 0.642 | 0.594 [0.540, 0.647] | 0.578 |
+| Mantis and shortcut baseline, rank-averaged | 0.749 [0.675, 0.821] | 0.722 | 0.649 [0.596, 0.699] | 0.640 |
+| Difference, rank-averaged vs shortcut | +0.027 [-0.016, +0.071] | +0.025 | +0.014 [-0.025, +0.051] | +0.007 |
+
+Fold assignment alone moves these AUROCs by about 0.02, which is roughly how much the first
+estimate of the combination's gain shrank.
 
 ## Approach
 
@@ -118,6 +131,9 @@ python scripts/evaluate.py --data dataset/$D.npz \
            cnn_lstm=results/$D/cnn_lstm_wbce missingness_length=results/$D/baselines/missingness_length \
     --reference missingness_length --subset all vaginal --out results/$D/table.csv
 ```
+
+Every script that splits the data takes `--fold_seed` (default 42); the confirmation table above is steps 2, 3 and 5
+rerun with `--fold_seed 1000` into `results/<window file>_seed1000/`.
 
 Embeddings do not depend on the label, so one extraction serves both thresholds. For MOMENT,
 install `momentfm` with `--no-deps`; see `requirements.txt` for the pins that work with
@@ -190,8 +206,8 @@ that have not yet been benchmarked on CTU-UHB.
 
 - One public cohort of 541 usable recordings and 38 positives at pH < 7.05; intervals are wide,
   and nothing here has been validated externally.
-- The rank-averaged combination was chosen after seeing results. The next step is to confirm it
-  on fresh fold assignments and, ideally, an external cohort.
+- The combination's gain over the shortcut baseline is consistent but small (+0.03 on new
+  folds) and not significant with 38 positives. An external cohort is the real test.
 - The CNN-LSTM reads the last of about 1,800 LSTM steps and was not tuned; more downsampling,
   pooling over time and a higher learning rate are the obvious fixes.
 - Mantis sees about 2 minutes at a time. Fine-tuning it with attention across chunks is the most
