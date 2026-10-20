@@ -99,6 +99,26 @@ def summarize(y, P, n_boot, seed, P_ref=None):
     return out
 
 
+def fold_assignment(df: pd.DataFrame) -> pd.Series:
+    return df.set_index(["repeat", "window_index"])["fold"].sort_index()
+
+
+def warn_on_different_folds(runs: dict):
+    """Paired comparisons are tightest when every run used the same folds; say so if not."""
+    names = [n for n, df in runs.items() if "fold" in df]
+    if len(names) < 2:
+        return
+    ref = fold_assignment(runs[names[0]])
+    for n in names[1:]:
+        other = fold_assignment(runs[n])
+        common = ref.index.intersection(other.index)
+        if len(common) and not (ref.loc[common] == other.loc[common]).all():
+            print(f"WARNING: {n} and {names[0]} were run on different cross-validation folds "
+                  f"(different --fold_seed, or scikit-learn < 1.8 vs >= 1.8). Each is still a "
+                  f"valid out-of-fold estimate, but their paired comparison is noisier.",
+                  file=sys.stderr)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", required=True, help="Window file the runs were trained on")
@@ -129,6 +149,7 @@ def main():
         runs[name] = df
     if args.reference and args.reference not in runs:
         sys.exit(f"--reference {args.reference} is not one of the runs")
+    warn_on_different_folds(runs)
 
     rows = []
     for subset in args.subset:

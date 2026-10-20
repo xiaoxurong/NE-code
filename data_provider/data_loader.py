@@ -8,7 +8,7 @@ class CTGDataset(Dataset):
         Parameters
         ----------
         npz_path : str
-            Path to CTG30minSegments.npz
+            Path to a window file written by scripts/prepare_ctu_uhb.py
         indices : np.ndarray or list, optional
             Indices of samples to use (for train/val/test split)
         """

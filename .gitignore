@@ -38,3 +38,6 @@ results_*.tar.gz
 # embeddings from pretrained encoders
 embeddings/
 emb_*.tar.gz
+
+# Versioned outputs: README figures and the aggregate evaluation tables (no per-recording data)
+!docs/tables/*.csv

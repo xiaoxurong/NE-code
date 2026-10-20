@@ -40,7 +40,7 @@ export MPLCONFIGDIR="$PWD/.mplconfig"
 export PYTHONPATH="$PWD/pydeps${PYTHONPATH:+:$PYTHONPATH}"
 MISSING=$(python3 - <<'PY'
 import importlib.util
-need = {"numpy": "numpy", "torch": "torch", "sklearn": "scikit-learn", "pandas": "pandas",
+need = {"numpy": "numpy", "torch": "torch", "sklearn": "scikit-learn>=1.8", "pandas": "pandas",
         "yaml": "pyyaml", "matplotlib": "matplotlib"}
 print(" ".join(pkg for mod, pkg in need.items() if importlib.util.find_spec(mod) is None))
 PY

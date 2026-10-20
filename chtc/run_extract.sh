@@ -39,7 +39,7 @@ export PYTHONPATH="$PWD/pydeps${PYTHONPATH:+:$PYTHONPATH}"
 python3 -m pip install --quiet --no-cache-dir --target "$PWD/pydeps" --no-deps momentfm mantis-tsfm
 python3 -m pip install --quiet --no-cache-dir --target "$PWD/pydeps" \
     "transformers==4.46.3" "huggingface_hub==0.26.5" "datasets==4.0.0" \
-    safetensors einops tqdm scikit-learn pandas
+    safetensors einops tqdm "scikit-learn>=1.8" pandas
 python3 -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
 python3 - <<'PY'
 import transformers, huggingface_hub, momentfm, mantis.trainer

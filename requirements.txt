@@ -1,17 +1,19 @@
-torch
+# Core: data preparation, baselines, probes, evaluation, figures
 numpy
+scipy
 pandas
-scikit-learn>=1.0
+scikit-learn>=1.8      # 1.8 changed StratifiedGroupKFold shuffling; all results use >= 1.8
 pyyaml
 matplotlib
-wfdb          # reads the CTU-UHB PhysioNet records
+wfdb                   # reads the CTU-UHB PhysioNet records
 pytest
-# Only needed for dataPreprocessing.ipynb
-xlrd
-openpyxl
-jupyter
-# Only needed for scripts/extract_embeddings.py (pretrained encoders).
-# Install momentfm with:  pip install --no-deps momentfm
+
+# Training run.py models
+torch
+
+# Only for scripts/extract_embeddings.py (pretrained encoders). Install momentfm with
+#   pip install --no-deps momentfm
+# and pin transformers==4.46.3 huggingface_hub==0.26.5 datasets==4.0.0 if your PyTorch is < 2.6
 mantis-tsfm
 transformers
 einops

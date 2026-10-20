@@ -68,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ── data ─────────────────────────────────────────────────────────────────
     parser.add_argument('--root_path',  type=str, default='./dataset/')
-    parser.add_argument('--data_path',  type=str, default='CTG30minSegments.npz')
+    parser.add_argument('--data_path',  type=str, default='ctu_uhb_stage1_end_w30m_n1_v0.2_ph7.05.npz')
     parser.add_argument('--data',       type=str, default='CTG')
     parser.add_argument('--seq_len',    type=int, default=7200,
                         help='Length of each input window in time steps')

@@ -174,3 +174,48 @@ def test_cnn_lstm_learns_a_planted_signal_with_weighted_bce(tmp_path):
     from sklearn.metrics import roc_auc_score
     assert roc_auc_score(oof["y"], oof["prob"]) > 0.9
     assert oof["prob"].std() > 0.01                          # not collapsed
+
+
+def test_rank_average_is_label_free_and_checks_folds():
+    from combine import rank_average
+    rng = np.random.default_rng(0)
+    n = 60
+    base = pd.DataFrame({"repeat": np.repeat([0, 1], n), "fold": np.tile(np.arange(n) % 5 + 1, 2),
+                         "window_index": np.tile(np.arange(n), 2),
+                         "subject_id": np.tile([f"S{i}" for i in range(n)], 2),
+                         "y": np.tile((np.arange(n) < 15).astype(int), 2)})
+    a = base.assign(prob=rng.random(2 * n))
+    b = base.assign(prob=rng.random(2 * n) * 0.01 + 0.5)          # different scale
+    out = rank_average([a, b])
+    # equal say: each run's percentile is in (0, 1], so the average is too
+    assert out["prob"].between(0, 1).all()
+    pa = a.groupby("repeat")["prob"].rank(pct=True)
+    pb = b.groupby("repeat")["prob"].rank(pct=True)
+    np.testing.assert_allclose(out.sort_values(["repeat", "window_index"])["prob"].to_numpy(),
+                               ((pa + pb) / 2).to_numpy())
+    # never reads labels: flipping them in every input leaves the scores unchanged
+    flipped = rank_average([a.assign(y=1 - a["y"]), b.assign(y=1 - b["y"])])
+    np.testing.assert_allclose(flipped["prob"], out["prob"])
+    # refuses runs on different folds
+    with pytest.raises(ValueError, match="different folds"):
+        rank_average([a, b.assign(fold=b["fold"] % 5 + 1)])
+
+
+def test_sklearn_version_guard(monkeypatch):
+    import sklearn
+    from utils import splits
+    monkeypatch.setattr(sklearn, "__version__", "1.7.2")
+    with pytest.raises(RuntimeError, match="scikit-learn>=1.8"):
+        splits.check_sklearn_folds()
+    monkeypatch.setattr(sklearn, "__version__", "1.9.1")
+    splits.check_sklearn_folds()
+
+
+def test_folds_are_pinned():
+    """The fold assignment every result in this repo uses (scikit-learn >= 1.8, seed 42)."""
+    sid, y = toy_cohort(n_subjects=50, n_pos=10, seed=3)
+    te = [sorted(str(s) for s in set(sid[t]))
+          for *_, t in stratified_group_kfold_splits(sid, y, 5, seed=42)]
+    assert sorted(s for fold in te for s in fold) == sorted(set(sid))
+    # if this changes, a library update has changed the folds: rerun everything or pin it
+    assert te[0] == ["S002", "S005", "S010", "S016", "S023", "S024", "S028", "S030", "S041", "S049"]

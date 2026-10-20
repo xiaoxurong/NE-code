@@ -43,6 +43,12 @@ for stem_dir in results/*/; do
             --out_dir "results/$stem/baselines"
     fi
 
+    # fixed, label-free combination of the Mantis probe and the shortcut baseline
+    if [ -d "results/$stem/probe_mantis_meanmax" ]; then
+        python3 scripts/combine.py --runs "results/$stem/probe_mantis_meanmax" \
+            "results/$stem/baselines/$REFERENCE" --out_dir "results/$stem/combo_mantis+shortcut"
+    fi
+
     runs=()
     for d in "results/$stem"/*/; do
         name=$(basename "$d")
@@ -59,3 +65,9 @@ for stem_dir in results/*/; do
         --reference "$REFERENCE" --subset all vaginal \
         --out "results/$stem/table.csv"
 done
+
+# README figures and versioned copies of the tables (needs matplotlib and scipy)
+if [ -f "results/ctu_uhb_stage1_end_w30m_n1_v0.2_ph7.05/table.csv" ] && \
+   [ -f "results/ctu_uhb_stage1_end_w30m_n1_v0.2_ph7.15/table.csv" ]; then
+    python3 scripts/make_figures.py
+fi

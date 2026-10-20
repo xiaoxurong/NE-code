@@ -27,7 +27,7 @@ trap finish EXIT
 
 export PYTHONPATH="$PWD/pydeps${PYTHONPATH:+:$PYTHONPATH}"
 python3 -c "import sklearn, numpy" 2>/dev/null || \
-    python3 -m pip install --quiet --no-cache-dir --target "$PWD/pydeps" numpy scikit-learn
+    python3 -m pip install --quiet --no-cache-dir --target "$PWD/pydeps" numpy "scikit-learn>=1.8"
 
 python3 scripts/probe.py --data "$DATA_STEM.npz" \
     --embeddings "${WINDOW}__${MODEL}.npz" \

@@ -110,6 +110,25 @@ def subject_wise_stratified_split(
 
     return train_idx, val_idx
 
+MIN_SKLEARN_FOR_FOLDS = (1, 8)
+
+
+def check_sklearn_folds():
+    """
+    scikit-learn 1.8 changed how StratifiedGroupKFold(shuffle=True) assigns groups to folds,
+    so the same seed gives different folds before and after 1.8. Every result in this
+    repository uses >= 1.8; mixing versions would silently compare models on different
+    folds, so older versions are refused.
+    """
+    import sklearn
+    version = tuple(int(p) for p in sklearn.__version__.split(".")[:2])
+    if version < MIN_SKLEARN_FOR_FOLDS:
+        raise RuntimeError(
+            f"scikit-learn {sklearn.__version__} assigns cross-validation folds differently "
+            f"from >= 1.8, which every run in this repository uses. "
+            f"Upgrade with: pip install 'scikit-learn>=1.8'")
+
+
 def stratified_group_kfold_splits(subject_ids, labels, n_folds, seed=42, val_ratio=0.15):
     """
     Yield (train_idx, val_idx, test_idx) at the window level, with every window of a
@@ -125,6 +144,7 @@ def stratified_group_kfold_splits(subject_ids, labels, n_folds, seed=42, val_rat
     """
     from sklearn.model_selection import StratifiedGroupKFold
 
+    check_sklearn_folds()
     subject_ids = np.asarray(subject_ids)
     labels = np.asarray(labels)
     sgkf = StratifiedGroupKFold(n_splits=n_folds, shuffle=True, random_state=seed)
