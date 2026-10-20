@@ -1,17 +1,10 @@
 """
-run.py — CTG classification entry point
-========================================
-Key changes from original:
-  1. K-fold CV (StratifiedGroupKFold at subject level) — essential for 290 samples.
-  2. Separate held-out test set: one fold is held out from the start and never
-     used for model selection.
-  3. Dynamic `setting` name derived from model + timestamp (was hard-coded).
-  4. `--seed` for full reproducibility.
-  5. GPU detection cleaned up (argparse default was immediately overridden).
-  6. YAML override now also accepts keys not in argparse (model-specific params).
-  7. Added model-specific args (patch_size, num_kernels, num_heads, in_channels …).
-  8. AUROC aggregated and reported across folds alongside accuracy.
-  9. Results saved to a JSON file next to the checkpoints for later analysis.
+run.py: cross-validated training of the CNN-LSTM on a CTU-UHB window file.
+
+Repeated, subject-level cross-validation (utils/splits.py, the same folds as every other
+script); early stopping and checkpoint selection on validation subjects only; out-of-fold
+predictions written to <results_dir>/oof_predictions.csv for scripts/evaluate.py.
+YAML configs set defaults and command-line flags override them.
 """
 
 import argparse
@@ -24,7 +17,6 @@ from datetime import datetime
 import numpy as np
 import torch
 import yaml
-from sklearn.model_selection import StratifiedGroupKFold
 
 from exp.exp_classification import Exp_Classification
 # re-exported so `from run import stratified_group_kfold_splits` keeps working
@@ -56,13 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help='Path to a YAML config file. CLI flags override YAML values.')
 
     # ── experiment ────────────────────────────────────────────────────────────
-    parser.add_argument('--model', type=str, default='PatchTransformer',
-                        choices=[
-                            'CNN', 'EnhancedCNN', 'CNN1D', 'EnhancedCNN1D',
-                            'CNN_LSTM', 'TimeSeriesTransformer',
-                            'InceptionTime', 'PatchTransformer', 'ROCKET',
-                            'PatchMLP',  # keep legacy name
-                        ])
+    parser.add_argument('--model', type=str, default='CNN_LSTM', choices=['CNN_LSTM'])
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--num_classes', type=int, default=2)
 
@@ -103,7 +89,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--batch_size',    type=int,   default=32)
     parser.add_argument('--num_workers',   type=int,   default=4)
     parser.add_argument('--learning_rate', type=float, default=1e-4)
-    parser.add_argument('--lradj',         type=str,   default='type1')
     parser.add_argument('--dropout',       type=float, default=0.1)
     parser.add_argument('--checkpoints',   type=str,   default='./checkpoints/')
 
@@ -112,22 +97,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--use_multi_gpu',  action='store_true', default=False)
     parser.add_argument('--devices',        type=str,  default='0,1,2,3')
 
-    # ── shared model hyperparams ──────────────────────────────────────────────
-    parser.add_argument('--d_model',     type=int, default=64)
-    parser.add_argument('--e_layers',    type=int, default=2,  help='Transformer encoder layers')
-    parser.add_argument('--num_heads',   type=int, default=4,  help='Attention heads')
-    parser.add_argument('--use_norm',    type=int, default=1)
-    parser.add_argument('--moving_avg',  type=int, default=13)
+    # ── model ─────────────────────────────────────────────────────────────────
     parser.add_argument('--enc_in',      type=int, default=2,  help='Encoder input size (= in_channels)')
-
-    # ── PatchTransformer / PatchMLP ───────────────────────────────────────────
-    parser.add_argument('--patch_size', type=int, default=60,
-                        help='Patch length in time steps. '
-                             'At 4 Hz: 60=15 s, 120=30 s, 240=60 s')
-
-    # ── ROCKET ────────────────────────────────────────────────────────────────
-    parser.add_argument('--num_kernels', type=int, default=10_000,
-                        help='Number of random kernels for ROCKET')
 
     # ── CNN_LSTM ──────────────────────────────────────────────────────────────
     parser.add_argument('--lstm_hidden', type=int, default=64)
@@ -143,7 +114,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.set_defaults(use_focal=False)
     parser.add_argument('--focal_alpha', type=float, default=0.75,
                         help='Focal loss α — weight for positive class. '
-                             'Rule of thumb: 1 - (n_pos/n_total). For 39/290 ≈ 0.87')
+                             'Rule of thumb: 1 - (n_pos/n_total).')
     parser.add_argument('--pos_weight', type=str, default='none',
                         help="BCE positive-class weight when focal loss is off: 'auto' = "
                              "n_negative / n_positive of each fold's training labels, a number, "

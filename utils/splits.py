@@ -1,25 +1,6 @@
 import numpy as np
 from collections import defaultdict
 
-def subject_wise_split(
-    subject_ids,
-    val_ratio=0.2,
-    seed=42
-):
-    rng = np.random.default_rng(seed)
-    subjects = np.unique(subject_ids)
-    rng.shuffle(subjects)
-
-    n_val = int(len(subjects) * val_ratio)
-    print(f"Total subjects: {len(subjects)}, Train: {len(subjects) - n_val}, Val: {n_val}")
-    val_subjects = subjects[:n_val]
-    train_subjects = subjects[n_val:]
-
-    train_idx = np.isin(subject_ids, train_subjects)
-    val_idx = np.isin(subject_ids, val_subjects)
-
-    return np.where(train_idx)[0], np.where(val_idx)[0]
-
 def subject_wise_stratified_split(
     subject_ids,
     labels,

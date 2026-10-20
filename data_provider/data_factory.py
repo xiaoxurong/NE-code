@@ -1,11 +1,8 @@
-from data_provider.data_loader import CTGDataset, FHRDataset
+from data_provider.data_loader import CTGDataset
 from torch.utils.data import DataLoader
-import numpy as np
 
 data_dict = {
     "CTG": CTGDataset,
-    "FHR": FHRDataset,
-    # future classification datasets can go here
 }
 
 def data_provider(args, flag):

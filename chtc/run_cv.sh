@@ -4,7 +4,7 @@
 #   run_cv.sh <data_stem> <repeat> <config> <run_name> [extra run.py args...]
 #
 # Inputs transferred into the job's working directory:
-#   the code (run.py, exp/, model/, layers/, data_provider/, utils/, configs/)
+#   the code (run.py, exp/, model/, data_provider/, utils/, configs/)
 #   <data_stem>.npz (a window file from scripts/prepare_ctu_uhb.py)
 # Output: results_<data_stem>_<run_name>_r<repeat>.tar.gz holding
 #   results/<data_stem>/<run_name>/r<repeat>/{oof_predictions.csv,cv_results.json}

@@ -6,12 +6,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
 
 from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
 from utils.metrics import binary_classification_metrics, multiclass_classification_metrics, find_optimal_threshold
-from utils.tools import EarlyStopping, adjust_learning_rate
+from utils.tools import EarlyStopping
 
 warnings.filterwarnings('ignore')
 
@@ -26,7 +25,7 @@ class FocalLoss(nn.Module):
     FL(p_t) = -α_t · (1 - p_t)^γ · log(p_t)
 
     α  — up-weights the minority (positive) class.
-         Rule of thumb: α ≈ 1 - (pos_count / total). For 39/290 ≈ 0.85.
+         Rule of thumb: α ≈ 1 - (pos_count / total).
     γ  — focusing exponent. γ=0 → standard BCE. γ=2 is the paper default.
          Higher γ pushes harder on the hard examples.
 
@@ -116,124 +115,10 @@ class Exp_Classification(Exp_Basic):
         return outputs
 
     # ─────────────────────────────────────────────────────────────────────────
-    # ROCKET: precompute fixed features once, then only train the linear head
-    # ─────────────────────────────────────────────────────────────────────────
-
-    @torch.no_grad()
-    def _precompute_rocket_features(self, loader) -> tuple:
-        """
-        Extract frozen ROCKET features for an entire split in one pass.
-        Returns (features, labels) as CPU tensors — only needs to run once.
-        """
-        self.model.eval()
-        all_feats, all_labels = [], []
-        for batch_x, batch_y in loader:
-            batch_x = batch_x.float().to(self.device)
-            # Normalise layout and handle NaN — mirrors ROCKET.forward pre-processing
-            if batch_x.shape[1] != self.model.in_channels:
-                batch_x = batch_x.permute(0, 2, 1)
-            batch_x = torch.nan_to_num(batch_x, nan=0.0)
-            feats = self.model._extract_features(batch_x)   # (B, 2*num_kernels)
-            all_feats.append(feats.cpu())
-            all_labels.append(batch_y.cpu())
-        return torch.cat(all_feats), torch.cat(all_labels)
-
-    def _train_rocket(self, setting: str):
-        """
-        ROCKET-specific training path.
-        Features are precomputed once; only the linear head is trained each epoch.
-        This reduces per-epoch cost from O(kernels × T × N) to O(features × N).
-        """
-        train_data, train_loader = self._get_data('train')
-        val_data,   val_loader   = self._get_data('val')
-
-        path = os.path.join(self.args.checkpoints, setting)
-        os.makedirs(path, exist_ok=True)
-
-        # ── Precompute (the expensive step — runs only once) ─────────────────
-        print("Precomputing ROCKET features (runs once)...")
-        train_feats, train_labels = self._precompute_rocket_features(train_loader)
-        val_feats,   val_labels   = self._precompute_rocket_features(val_loader)
-        print(f"  Train features: {train_feats.shape} | "
-              f"Val features: {val_feats.shape}")
-
-        # ── Only optimise the linear classifier head ─────────────────────────
-        optimizer     = optim.Adam(self.model.classifier.parameters(),
-                                   lr=self.args.learning_rate)
-        criterion     = self._select_criterion(train_labels.numpy())
-        early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
-
-        # Mini-batch loader over precomputed features
-        feat_loader = DataLoader(
-            TensorDataset(train_feats, train_labels),
-            batch_size=self.args.batch_size, shuffle=True,
-        )
-
-        for epoch in range(self.args.train_epochs):
-            self.model.train()
-            train_losses = []
-
-            for feats, labels in feat_loader:
-                feats  = feats.to(self.device)
-                labels = labels.to(self.device)
-                optimizer.zero_grad()
-                logits = self.model.classifier(feats)       # (B, 1)
-                if self.args.num_classes == 2:
-                    loss = criterion(logits.squeeze(-1), labels.float())
-                else:
-                    loss = criterion(logits, labels)
-                loss.backward()
-                optimizer.step()
-                train_losses.append(loss.item())
-
-            # ── Validate on precomputed val features ─────────────────────────
-            self.model.eval()
-            with torch.no_grad():
-                val_logits = self.model.classifier(val_feats.to(self.device))
-                if self.args.num_classes == 2:
-                    val_loss  = criterion(val_logits.squeeze(-1),
-                                          val_labels.float().to(self.device)).item()
-                    val_probs = torch.sigmoid(val_logits.squeeze(-1)).cpu().numpy()
-                else:
-                    val_loss  = criterion(val_logits,
-                                          val_labels.to(self.device)).item()
-                    val_probs = torch.softmax(val_logits, dim=1).cpu().numpy()
-
-            if np.isnan(val_probs).any() or np.isinf(val_probs).any():
-                print("WARNING: val predictions contain NaN/Inf!")
-
-            val_trues = val_labels.numpy()
-            if self.args.num_classes == 2:
-                val_metric = binary_classification_metrics(val_trues, val_probs, threshold=0.5)
-            else:
-                val_metric = multiclass_classification_metrics(val_trues, val_probs, average="macro")
-
-            print(
-                f"Epoch {epoch+1:3d} | "
-                f"Train Loss {np.mean(train_losses):.4f} | "
-                f"Val Loss {val_loss:.4f} | "
-                f"AUROC {val_metric['auroc']:.4f} | "
-                f"F1 {val_metric['f1']:.4f}"
-                + self._spread_note(val_probs)
-            )
-
-            early_stopping(self._early_stop_value(val_loss, val_metric), self.model, path)
-            if early_stopping.early_stop:
-                print("Early stopping triggered.")
-                break
-
-        best_ckpt = os.path.join(path, 'checkpoint.pth')
-        self.model.load_state_dict(torch.load(best_ckpt, map_location=self.device))
-        return self.model
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Train  (dispatches to _train_rocket for ROCKET)
+    # Train
     # ─────────────────────────────────────────────────────────────────────────
 
     def train(self, setting: str):
-        if self.args.model == 'ROCKET':
-            return self._train_rocket(setting)
-
         train_data, train_loader = self._get_data('train')
         val_data,   val_loader   = self._get_data('val')
 
@@ -314,7 +199,7 @@ class Exp_Classification(Exp_Basic):
         return test_metric
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Validate  (shared by train loop, test, and ROCKET's test path)
+    # Validate  (shared by the train loop and test)
     # ─────────────────────────────────────────────────────────────────────────
 
     def validate(self, loader, criterion, threshold=0.5):

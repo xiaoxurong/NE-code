@@ -19,7 +19,7 @@ arguments    = $(data_stem) $(repeat) $(config) $(run_name)
 
 should_transfer_files   = YES
 when_to_transfer_output = ON_EXIT
-transfer_input_files    = run.py, exp, model, layers, data_provider, utils, configs, dataset/$(data_stem).npz
+transfer_input_files    = run.py, exp, model, data_provider, utils, configs, dataset/$(data_stem).npz
 transfer_output_files   = results_$(data_stem)_$(run_name)_r$(repeat).tar.gz
 
 # A failed job still returns its tarball (with a FAILED file); hold it with a clear reason.

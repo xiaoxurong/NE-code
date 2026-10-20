@@ -199,9 +199,6 @@ data_provider/  utils/         CTU-UHB loader, datasets, splits, metrics
 tests/                         pytest suite
 ```
 
-`model/` also contains InceptionTime, PatchTransformer, PatchMLP and ROCKET implementations
-that have not yet been benchmarked on CTU-UHB.
-
 ## Limitations and next steps
 
 - One public cohort of 541 usable recordings and 38 positives at pH < 7.05; intervals are wide,

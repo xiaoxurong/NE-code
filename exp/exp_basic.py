@@ -1,17 +1,13 @@
 import os
 import torch
-from model import PatchMLP, ROCKET, PatchTransformer, InceptionTime, CNN_LSTM
+from model import CNN_LSTM
 
 
 class Exp_Basic(object):
     def __init__(self, args):
         self.args = args
         self.model_dict = {
-            'PatchMLP':         PatchMLP,
-            'ROCKET':           ROCKET,
-            'PatchTransformer': PatchTransformer,
-            'InceptionTime':    InceptionTime,
-            'CNN_LSTM':         CNN_LSTM,
+            'CNN_LSTM': CNN_LSTM,
         }
         self.device = self._acquire_device()
         self.model = self._build_model().to(self.device)
